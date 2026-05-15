@@ -114,4 +114,4 @@ The on-disk format also guarantees that a partial write of either meta page can'
 
 The on-disk format and commit algorithm are deliberately close to [BoltDB](https://github.com/boltdb/bolt) and through it to [LMDB](http://www.lmdb.tech/doc/). The point of this code wasn't to be original, it was to actually understand those designs by writing one. Read [Howard Chu's LMDB paper](https://www.openldap.org/pub/hyc/mdb-paper.pdf) and the [BoltDB README](https://github.com/etcd-io/bbolt#readme) if you want the canonical version.
 
-MIT. Built by [Charlie Tonneslan](https://charlietonneslan.dev).
+MIT. Built by [Charlie Tonneslan](https://c-tonneslan-portfolio.vercel.app/).
