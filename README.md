@@ -79,24 +79,26 @@ On insert, we walk the tree, mutate the leaf in memory, and let commit's spill s
 
 ## Benchmarks vs bbolt
 
-`go test -bench .` against [bbolt](https://github.com/etcd-io/bbolt) (the maintained fork of BoltDB). 64-byte values, 8-byte keys.
+`go test -bench .` against [bbolt](https://github.com/etcd-io/bbolt) (the maintained fork of BoltDB). 64-byte values, 8-byte keys. Apple M4 Pro, darwin/arm64.
 
 ```
-BenchmarkLittleDBPut-14         8.6 ms/op    # one Put per transaction with fsync
-BenchmarkBoltPut-14             8.3 ms/op    # ditto
+BenchmarkLittleDBPut-14         17.6 ms/op   # one Put per transaction with fsync
+BenchmarkBoltPut-14              8.2 ms/op   # ditto
 
-BenchmarkLittleDBPutBatch-14    8.4 µs/op    # 1000 Puts per transaction
-BenchmarkBoltPutBatch-14        8.4 µs/op
+BenchmarkLittleDBPutBatch-14     8.7 µs/op   # 1000 Puts per transaction
+BenchmarkBoltPutBatch-14         8.7 µs/op
 
-BenchmarkLittleDBGet-14         2.5 µs/op    # point lookup on 100k keys
-BenchmarkBoltGet-14             0.4 µs/op
+BenchmarkLittleDBGet-14          2.4 µs/op   # point lookup on 100k keys
+BenchmarkBoltGet-14              0.5 µs/op
 ```
 
-Writes are basically tied. Both databases are bottlenecked on `fsync` at the meta-page swap, and a small Go implementation can match bbolt there.
+Batch writes are tied. Both databases bottleneck on a single `fsync` at the meta-page swap, and the per-Put cost inside the transaction is dominated by tree traversal + leaf rewriting, which my implementation does about as fast as bbolt's.
 
-Reads are about 6x slower. bbolt uses mmap so lookups never copy a page; littledb does a 4KB `ReadAt` per branch/leaf traversal. That's the price of "no mmap" and I'm fine with it for a learning project.
+One-Put-per-transaction is roughly 2x slower than bbolt. Same meta-swap fsync cost, but every commit also has to walk the path back down from the root via `ReadAt`, where bbolt's mmap makes the path effectively free. This is the worst-case workload for "no mmap" and I think it's the right trade for a learning project. If you're doing one-key writes in a hot loop, batch them; if you can't batch them, use bbolt.
 
-File size is comparable too: bulk loading 10,000 64-byte values produces a ~40MB file in both, since both use 4KB pages with similar fanout.
+Reads on a steady-state tree are about 5x slower for the same reason: bbolt mmap reads never copy a page, littledb does a 4KB `ReadAt` per branch and leaf.
+
+File size is comparable: bulk loading 10,000 64-byte values produces a ~40 MB file in both, since both use 4KB pages with similar fanout. Per-key overhead lands around 4,200 bytes, which is the "small commits each rewrite a tree path" amplification you eat when you don't batch.
 
 ## Crash recovery
 
