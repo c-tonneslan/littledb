@@ -89,6 +89,35 @@ func (c *Cursor) Next() (key, value []byte) {
 	return c.kv()
 }
 
+// Prev steps the cursor back by one key. It's the mirror of Next:
+// position with Last (or Seek) and call Prev to walk in descending
+// order. Returns nil, nil once the cursor moves past the first key.
+func (c *Cursor) Prev() (key, value []byte) {
+	if len(c.stack) == 0 {
+		return nil, nil
+	}
+	for {
+		top := &c.stack[len(c.stack)-1]
+		top.idx--
+		if top.idx >= 0 {
+			break
+		}
+		// before the start of this node; pop and continue from parent
+		c.stack = c.stack[:len(c.stack)-1]
+		if len(c.stack) == 0 {
+			return nil, nil
+		}
+	}
+	// Re-descend rightmost children if we landed on a branch.
+	top := &c.stack[len(c.stack)-1]
+	if top.page.flags&branchPage != 0 {
+		off := pageHeaderSize + top.idx*16
+		childID := pgid(uint64FromBuf(top.buf[off+8:]))
+		c.descend(childID, false)
+	}
+	return c.kv()
+}
+
 // descend walks down to the leftmost (asc=true) or rightmost (asc=false)
 // leaf starting at the given page, pushing frames onto the stack as it
 // goes.

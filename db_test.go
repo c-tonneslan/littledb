@@ -396,6 +396,72 @@ func TestRangeFullScan(t *testing.T) {
 	}
 }
 
+func TestCursorPrevWalksBackward(t *testing.T) {
+	db, _ := tempDB(t)
+	defer db.Close()
+	if err := db.Update(func(tx *Tx) error {
+		for i := 0; i < 1000; i++ {
+			if err := tx.Put([]byte(fmt.Sprintf("k%04d", i)), []byte(fmt.Sprintf("v%d", i))); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.View(func(tx *Tx) error {
+		c := tx.Cursor()
+		var seen []string
+		for k, _ := c.Last(); k != nil; k, _ = c.Prev() {
+			seen = append(seen, string(k))
+		}
+		if len(seen) != 1000 {
+			return fmt.Errorf("expected 1000 keys, got %d", len(seen))
+		}
+		for i := 0; i < 1000; i++ {
+			want := fmt.Sprintf("k%04d", 999-i)
+			if seen[i] != want {
+				return fmt.Errorf("idx %d: got %q want %q", i, seen[i], want)
+			}
+		}
+		// Prev past the first key is exhausted, not a wraparound.
+		if k, _ := c.Prev(); k != nil {
+			return fmt.Errorf("Prev past the start returned %q, want nil", k)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCursorPrevFromSeek(t *testing.T) {
+	db, _ := tempDB(t)
+	defer db.Close()
+	if err := db.Update(func(tx *Tx) error {
+		for i := 0; i < 100; i++ {
+			if err := tx.Put([]byte(fmt.Sprintf("k%03d", i)), []byte("x")); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.View(func(tx *Tx) error {
+		c := tx.Cursor()
+		if k, _ := c.Seek([]byte("k050")); string(k) != "k050" {
+			return fmt.Errorf("Seek landed on %q, want k050", k)
+		}
+		if k, _ := c.Prev(); string(k) != "k049" {
+			return fmt.Errorf("Prev gave %q, want k049", k)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRangeBounded(t *testing.T) {
 	db, _ := tempDB(t)
 	defer db.Close()
